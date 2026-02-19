@@ -1,0 +1,86 @@
+# ============================================
+# AegisOS - Git Ignore
+# ============================================
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+venv/
+ENV/
+env/
+.venv
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Database & Data Files (Sensitive/Runtime)
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+aegisos.db
+aegisos.lock
+test_*.db
+
+# Logs
+logs/
+*.log
+
+# Backups
+backups/
+
+# Runtime Data
+data/
+projects/
+
+# Runtime Reports
+governance_report*.csv
+governance_report*.md
+
+# Environment Variables (Secrets)
+.env
+.env.local
+.env.*.local
+
+# Config with real secrets (keep config.yaml.example only)
+# Note: config.yaml is tracked with placeholder values
+# Do NOT commit config.yaml with real tokens!
+
+# Test artifacts
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Git
+.git/
+
+# OS
+Thumbs.db
+desktop.ini

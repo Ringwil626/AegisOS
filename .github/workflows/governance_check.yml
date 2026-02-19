@@ -1,0 +1,87 @@
+name: AegisOS Governance Check
+
+on:
+  pull_request:
+    paths:
+      - 'aegisos/**.py'
+      - 'check_governance*.py'
+      - 'config.yaml'
+  push:
+    branches:
+      - main
+      - develop
+
+jobs:
+  governance:
+    name: Governance Compliance
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write  # Required to post PR comments
+    steps:
+      # Checkout repo with full history for git diff
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Required for git diff to work
+
+      # Set up Python
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # Run incremental governance check
+      - name: Run Governance Check
+        id: check
+        # Allow all exit codes so we can handle them manually
+        shell: bash
+        run: |
+          python check_governance_pr.py --base=origin/${{ github.base_ref }}
+          EXIT_CODE=$?
+          echo "exit_code=$EXIT_CODE" >> $GITHUB_OUTPUT
+          exit 0  # Don't fail here, we handle it in later steps
+
+      # Read report content
+      - name: Read report
+        if: always()
+        id: report
+        run: |
+          if [ -f governance_report_pr.md ]; then
+            echo "content<<EOF" >> $GITHUB_OUTPUT
+            cat governance_report_pr.md >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+          else
+            echo "content=No report generated" >> $GITHUB_OUTPUT
+          fi
+
+      # Post Markdown report to PR
+      - name: Post report to PR
+        if: github.event_name == 'pull_request' && always()
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: "governance-check"
+          message: |
+            ## AegisOS Governance Compliance Check
+
+            ${{ steps.report.outputs.content }}
+
+            ---
+            *This check validates compliance with [Runtime Contract v1.0](GOVERNANCE.md)*
+
+      # Handle check results
+      - name: Check governance result
+        shell: bash
+        run: |
+          EXIT_CODE=${{ steps.check.outputs.exit_code }}
+          if [ "$EXIT_CODE" == "1" ]; then
+            echo "❌ Governance compliance check FAILED with errors"
+            exit 1
+          elif [ "$EXIT_CODE" == "2" ]; then
+            echo "⚠️ Governance check PASSED but CRITICAL MODULES modified"
+            echo "Manual review required before merge"
+            # Don't fail, but add a notice
+            echo "::notice::Critical runtime modules modified. Manual review required."
+          else
+            echo "✅ Governance compliance check PASSED"
+          fi

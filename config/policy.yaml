@@ -1,0 +1,22 @@
+# AegisOS Phase6 Policy Configuration
+# Controls when and how system optimizations are triggered
+
+# Analyzer settings
+scan_interval_minutes: 10
+metrics_window_hours: 24
+
+# Evaluator thresholds
+optimize_when:
+  token_drift_pct: 25        # Token usage increase threshold (%)
+  retry_ratio: 0.2          # Retry ratio threshold (0-1)
+  latency_p95_sec: 12       # P95 latency threshold (seconds)
+  success_rate_drop: 0.15   # Success rate drop threshold (0-1)
+
+# Evaluation constraints
+min_sample_size: 20         # Minimum tasks for analysis
+cooldown_minutes: 60        # Cooldown between proposals
+
+# Shadow validation
+min_shadow_runs: 10         # Minimum shadow runs before switch
+max_shadow_duration_hours: 24
+success_rate_regression_threshold: 0.05  # Max allowed regression
