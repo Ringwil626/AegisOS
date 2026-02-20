@@ -39,8 +39,8 @@ _current_dir = os.path.dirname(__file__)
 _project_root = os.path.dirname(os.path.dirname(_current_dir))
 sys.path.insert(0, _project_root)
 
-# Inference Contract imports
-from aegisos.infra.kimi_client import (
+# Internal provider - NOT a public API
+from aegisos.executor._inference_provider import (
     InferenceRequest,
     InferenceResult,
     run_inference as _run_inference,
@@ -62,7 +62,7 @@ from aegisos.audit.usage_logger import (
     log_inference_rejection,
     log_inference_failure
 )
-from aegisos.ai.ledger import check_daily_budget
+from aegisos.db.ledger import check_daily_budget
 
 
 class ContractInferenceExecutor:

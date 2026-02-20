@@ -182,14 +182,10 @@ class WorkerPool:
         task.started_at = time.time()
         
         try:
-            # Update DB to running (use simple connection, avoid lock issues)
+            # Update DB to running via runtime_writer (enforced by firewall)
             try:
-                conn = sqlite3.connect(DB_PATH)
-                cursor = conn.cursor()
-                cursor.execute("UPDATE tasks SET status = ?, updated_at = unixepoch() WHERE id = ?",
-                              ("running", task.task_id))
-                conn.commit()
-                conn.close()
+                from aegisos.db.runtime_writer import update_task_status
+                update_task_status(task.task_id, "running")
             except Exception as db_err:
                 print(f"[WorkerPool] DB update error (running): {db_err}")
             
@@ -206,13 +202,11 @@ class WorkerPool:
             
             # Update DB to completed
             try:
-                conn = sqlite3.connect(DB_PATH)
-                cursor = conn.cursor()
+                # Use runtime_writer for Level 0 table writes
+                from aegisos.db.runtime_writer import update_task_status, update_task_payload
                 new_payload = task.payload + "\nRESULT: " + result
-                cursor.execute("UPDATE tasks SET payload = ?, status = ?, updated_at = unixepoch() WHERE id = ?",
-                              (new_payload, "completed", task.task_id))
-                conn.commit()
-                conn.close()
+                update_task_payload(task.task_id, new_payload)
+                update_task_status(task.task_id, "completed")
             except Exception as db_err:
                 print(f"[WorkerPool] DB update error (completed): {db_err}")
             
@@ -263,12 +257,10 @@ class WorkerPool:
             task.completed_at = time.time()
             
             try:
-                conn = sqlite3.connect(DB_PATH)
-                cursor = conn.cursor()
-                cursor.execute("UPDATE tasks SET status = ?, payload = ?, updated_at = unixepoch() WHERE id = ?",
-                              ("failed", task.payload + "\nRESULT: TIMEOUT", task.task_id))
-                conn.commit()
-                conn.close()
+                # Use runtime_writer for Level 0 table writes
+                from aegisos.db.runtime_writer import update_task_status, update_task_payload
+                update_task_payload(task.task_id, task.payload + "\nRESULT: TIMEOUT")
+                update_task_status(task.task_id, "failed")
             except Exception as db_err:
                 print(f"[WorkerPool] DB update error (timeout): {db_err}")
             
@@ -313,12 +305,10 @@ class WorkerPool:
             task.completed_at = time.time()
             
             try:
-                conn = sqlite3.connect(DB_PATH)
-                cursor = conn.cursor()
-                cursor.execute("UPDATE tasks SET status = ?, payload = ?, updated_at = unixepoch() WHERE id = ?",
-                              ("failed", task.payload + f"\nRESULT: ERROR: {e}", task.task_id))
-                conn.commit()
-                conn.close()
+                # Use runtime_writer for Level 0 table writes
+                from aegisos.db.runtime_writer import update_task_status, update_task_payload
+                update_task_payload(task.task_id, task.payload + f"\nRESULT: ERROR: {e}")
+                update_task_status(task.task_id, "failed")
             except Exception as db_err:
                 print(f"[WorkerPool] DB update error (failed): {db_err}")
             
@@ -475,17 +465,24 @@ class WorkerPool:
         
         # Try to use KimiClient directly for temperature control
         try:
-            from aegisos.ai.kimi_client import get_client
-            client = get_client()
+            # Use inference executor for AI calls
+            from aegisos.executor.inference_executor import ContractInferenceExecutor
+            executor = ContractInferenceExecutor(project=context.get('project', 'default'))
             
-            # Call with temperature parameter
-            result = client.run_task(full_prompt, context, temperature=temperature)
+            # Call with contract-based execution
+            from aegisos.core.state_builder import ActionType
+            inference_result = executor.execute_contract(
+                task_id=str(task.task_id),
+                action=ActionType.ANALYZE_CODE,
+                inputs={'prompt': full_prompt, 'context': context}
+            )
+            result = inference_result.output_text if inference_result.success else {}
             response_json = json.dumps(result)
             
             # Log usage to ledger
             prompt_tokens = len(full_prompt) // 4
             completion_tokens = len(response_json) // 4
-            from aegisos.ai.ledger import log_ai_usage
+            from aegisos.db.ledger import log_ai_usage
             log_ai_usage(task.task_id, task.model, prompt_tokens, completion_tokens, status="committed")
             
             return response_json

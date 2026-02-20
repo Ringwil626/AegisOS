@@ -141,29 +141,22 @@ class UsageLedger:
         Returns:
             Ledger entry ID
         """
-        tokens_total = tokens_prompt + tokens_completion
+        # Use runtime_writer for all Level 0 table writes
+        from aegisos.db.runtime_writer import record_usage as _record_usage
         
-        conn = sqlite3.connect(DB_PATH)
-        cursor = conn.cursor()
+        _record_usage(
+            task_id=task_id,
+            model=model,
+            prompt_tokens=tokens_prompt,
+            completion_tokens=tokens_completion,
+            cost=cost_estimate
+        )
         
-        cursor.execute("""
-            INSERT INTO usage_ledger 
-            (task_id, project, model, tokens_prompt, tokens_completion, 
-             tokens_total, latency_ms, cost_estimate)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """, (task_id, project, model, tokens_prompt, tokens_completion,
-              tokens_total, latency_ms, cost_estimate))
+        # Rate limiting is also Level 0 - use runtime_writer
+        from aegisos.db.runtime_writer import log_rate_limit
+        log_rate_limit(project=project, task_id=task_id)
         
-        ledger_id = cursor.lastrowid
-        
-        # Also record for rate limiting
-        cursor.execute("""
-            INSERT INTO rate_limit_log (project, task_id)
-            VALUES (?, ?)
-        """, (project, task_id))
-        
-        conn.commit()
-        conn.close()
+        return 0  # ledger_id not available with runtime_writer
         
         return ledger_id
     
@@ -341,6 +334,10 @@ class UsageLedger:
     @staticmethod
     def set_budget_config(config: BudgetConfig):
         """Set budget configuration for project."""
+        # Use runtime_writer for Level 0 table writes
+        from aegisos.db.runtime_writer import update_budget
+        update_budget(config.project, 0)  # Initialize with 0 spent
+        
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
         
@@ -393,6 +390,45 @@ class UsageLedger:
             "avg_latency_ms": round(row[4], 2),
             "max_latency_ms": row[5]
         }
+
+
+class BudgetManager:
+    """Budget management - compatibility wrapper around UsageLedger."""
+    
+    DEFAULT_BUDGETS = {
+        "aegisos": {"daily_tokens": 100000, "daily_cost": 5.0},
+        "default": {"daily_tokens": 50000, "daily_cost": 2.0}
+    }
+    
+    @staticmethod
+    def set_budget(project: str, daily_token_limit: int, daily_cost_limit: float, 
+                   hard_stop: bool = True, max_tasks_per_minute: int = 10):
+        """Set budget for a project.
+        
+        Args:
+            project: Project name
+            daily_token_limit: Daily token limit
+            daily_cost_limit: Daily cost limit ($)
+            hard_stop: Whether to hard stop when exceeded
+            max_tasks_per_minute: Rate limit
+        """
+        config = BudgetConfig(
+            project=project,
+            daily_token_limit=daily_token_limit,
+            daily_cost_limit=daily_cost_limit,
+            hard_stop=hard_stop,
+            max_tasks_per_minute=max_tasks_per_minute
+        )
+        UsageLedger.set_budget_config(config)
+    
+    @staticmethod
+    def check_budget_gate(project: str) -> Tuple[bool, str, Dict[str, Any]]:
+        """Check if project is within budget (alias for check_budget).
+        
+        Returns:
+            (allowed, reason, usage_stats)
+        """
+        return UsageLedger.check_budget(project)
 
 
 # Convenience functions

@@ -28,7 +28,7 @@ _current_dir = os.path.dirname(__file__)
 _project_root = os.path.dirname(os.path.dirname(_current_dir))
 sys.path.insert(0, _project_root)
 
-from aegisos.ai.ledger import log_ai_usage
+from aegisos.db.ledger import log_ai_usage
 
 
 def log_inference_usage(

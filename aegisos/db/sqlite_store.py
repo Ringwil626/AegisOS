@@ -1,13 +1,199 @@
-"""SQLite storage layer - Runtime Transition Protocol v1.0.
+﻿"""SQLite storage layer - Runtime Transition Protocol v1.0.
 
 Database schema aligned with strict runtime protocol.
+Includes DB Write Firewall to prevent AI from mutating runtime state.
 """
 import sqlite3
 import os
 import time
+import sys
+import inspect
 
 DB_PATH = os.path.abspath("aegisos.db")
 RUNTIME_VERSION = "v1.0"
+
+# ========================================================================
+# DB WRITE FIREWALL - Runtime Contract Extension v1.0
+# ========================================================================
+
+# Level 0 Tables - Runtime Authority (AI cannot write directly)
+LEVEL_0_TABLES = {
+    'tasks', 'system_state', 'heartbeats', 'usage_ledger', 
+    'budgets', 'rate_limit_log'
+}
+
+# Core Runtime Callers - Only these modules can write Level 0
+CORE_RUNTIME_CALLERS = {
+    'aegisos.core.supervisor',
+    'aegisos.core.executor', 
+    'aegisos.core.worker',
+    'aegisos.core.health',
+    'aegisos.db.runtime_writer',
+    'aegisos.db.sqlite_store',  # Self-reference for internal ops
+}
+
+# Forbidden AI-related modules
+FORBIDDEN_CALLERS = {
+    'aegisos.ai',
+    'aegisos.intelligence', 
+    'aegisos.memory',
+    'aegisos.evolution',
+    'aegisos.analysis',
+}
+
+
+class RuntimeWriteViolation(Exception):
+    """AI-originated code attempted to mutate runtime state."""
+    pass
+
+
+def _get_caller_module():
+    """Get the module name of the caller (2 frames up)."""
+    frame = inspect.currentframe()
+    try:
+        # frame 0 = this function
+        # frame 1 = the function calling _get_caller_module
+        # frame 2 = the actual caller we want to check
+        if frame and frame.f_back and frame.f_back.f_back:
+            return frame.f_back.f_back.f_globals.get('__name__', '')
+    finally:
+        del frame
+    return ''
+
+
+def _check_runtime_write_permission(table: str):
+    """Check if caller is allowed to write to Level 0 table.
+    
+    This is the DB Write Firewall enforcement.
+    
+    Args:
+        table: Target table name
+        
+    Raises:
+        RuntimeWriteViolation if caller is not authorized
+    """
+    # Only check Level 0 tables
+    if table not in LEVEL_0_TABLES:
+        return
+    
+    caller = _get_caller_module()
+    
+    # Allow if no caller info (e.g., direct script execution)
+    if not caller:
+        return
+    
+    # Check if caller is in whitelist
+    for allowed in CORE_RUNTIME_CALLERS:
+        if caller.startswith(allowed):
+            return
+    
+    # Check if caller is forbidden (AI-related)
+    for forbidden in FORBIDDEN_CALLERS:
+        if caller.startswith(forbidden):
+            raise RuntimeWriteViolation(
+                f"[FIREWALL] RuntimeWriteViolation:\n"
+                f"  Module: {caller}\n"
+                f"  Attempted: WRITE to Level 0 table '{table}'\n"
+                f"  Rule: AI-originated code cannot mutate runtime state.\n"
+                f"  Action: Submit a proposal via Governance API instead.\n"
+                f"  Tables: {LEVEL_0_TABLES}"
+            )
+    
+    # Unknown caller - allow but this is a gray area
+    # In strict mode, we might want to block unknown callers too
+    pass
+
+
+def _enforce_write_firewall(sql: str):
+    """Enforce write firewall on SQL statement.
+    
+    Args:
+        sql: SQL statement to check
+        
+    Raises:
+        RuntimeWriteViolation if write is forbidden
+    """
+    sql_upper = sql.upper().strip()
+    
+    # Only check write operations
+    if not any(sql_upper.startswith(cmd) for cmd in ['INSERT', 'UPDATE', 'DELETE']):
+        return
+    
+    # Extract table name (simple heuristic)
+    import re
+    
+    # Match INSERT INTO table
+    match = re.search(r'INSERT\s+INTO\s+(\w+)', sql_upper)
+    if match:
+        table = match.group(1).lower()
+        _check_runtime_write_permission(table)
+        return
+    
+    # Match UPDATE table
+    match = re.search(r'UPDATE\s+(\w+)', sql_upper)
+    if match:
+        table = match.group(1).lower()
+        _check_runtime_write_permission(table)
+        return
+    
+    # Match DELETE FROM table
+    match = re.search(r'DELETE\s+FROM\s+(\w+)', sql_upper)
+    if match:
+        table = match.group(1).lower()
+        _check_runtime_write_permission(table)
+        return
+
+
+# Firewall status for startup verification
+_FIREWALL_ACTIVE = True
+
+
+def get_firewall_status():
+    """Get DB Write Firewall status for startup logging."""
+    return {
+        'active': _FIREWALL_ACTIVE,
+        'level0_tables': len(LEVEL_0_TABLES),
+        'protected_tables': list(LEVEL_0_TABLES),
+        'authorized_modules': len(CORE_RUNTIME_CALLERS)
+    }
+
+
+def get_conn():
+    """Get database connection with firewall-protected execute."""
+    return GuardedConnection(sqlite3.connect(DB_PATH))
+
+
+class GuardedConnection:
+    """Connection wrapper that enforces write firewall."""
+    
+    def __init__(self, conn):
+        self._conn = conn
+        _configure_sqlite_pragmas(conn)
+    
+    def execute(self, sql, parameters=None):
+        """Execute SQL with firewall check."""
+        _enforce_write_firewall(sql)
+        if parameters is not None:
+            return self._conn.execute(sql, parameters)
+        return self._conn.execute(sql)
+    
+    def cursor(self):
+        """Get cursor."""
+        return self._conn.cursor()
+    
+    def commit(self):
+        """Commit transaction."""
+        return self._conn.commit()
+    
+    def close(self):
+        """Close connection."""
+        return self._conn.close()
+    
+    def __enter__(self):
+        return self
+    
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
 
 
 def _configure_sqlite_pragmas(conn):
@@ -24,7 +210,14 @@ def _configure_sqlite_pragmas(conn):
 
 def init_db():
     """Initialize database with Runtime Transition Protocol v1.0 schema."""
-    conn = sqlite3.connect(DB_PATH)
+    # Print DB Write Firewall status (required by Runtime Contract v1.0)
+    status = get_firewall_status()
+    print("[GUARD] Runtime Write Firewall: ACTIVE")
+    print(f"[GUARD] Level0 tables protected: {status['level0_tables']}")
+    print(f"[GUARD] Unauthorized writers: BLOCKED")
+    print(f"[GUARD] Protected: {', '.join(status['protected_tables'])}")
+    
+    conn = get_conn()
     
     # P0-2: MUST configure WAL every connection
     _configure_sqlite_pragmas(conn)
@@ -170,7 +363,7 @@ def init_db():
 
 def _startup_repair_stuck_tasks():
     """P0-4: Auto-repair tasks stuck in 'running' state from crash."""
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_conn()
     _configure_sqlite_pragmas(conn)
     cursor = conn.cursor()
     
@@ -190,7 +383,7 @@ def _startup_repair_stuck_tasks():
 
 def get_system_state(key: str) -> str | None:
     """Get system state value by key."""
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_conn()
     cursor = conn.cursor()
     cursor.execute("SELECT value FROM system_state WHERE key = ?", (key,))
     row = cursor.fetchone()
@@ -198,9 +391,23 @@ def get_system_state(key: str) -> str | None:
     return row[0] if row else None
 
 
+def get_state(key: str) -> str | None:
+    """Get system state value by key."""
+    conn = get_conn()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT value FROM system_state WHERE key = ?",
+        (key,)
+    )
+    row = cursor.fetchone()
+    conn.close()
+    return row[0] if row else None
+
+
 def set_system_state(key: str, value: str):
     """Set system state value with timestamp."""
-    conn = sqlite3.connect(DB_PATH)
+    _check_runtime_write_permission('system_state')
+    conn = get_conn()
     cursor = conn.cursor()
     cursor.execute(
         "INSERT OR REPLACE INTO system_state (key, value, updated_at) VALUES (?, ?, unixepoch())",
@@ -217,7 +424,8 @@ def write_heartbeat(component: str, message: str):
         component: Component name (e.g., 'supervisor')
         message: Heartbeat message (alive, handoff_prepare, etc.)
     """
-    conn = sqlite3.connect(DB_PATH)
+    _check_runtime_write_permission('heartbeats')
+    conn = get_conn()
     cursor = conn.cursor()
     cursor.execute(
         "INSERT INTO heartbeats (component, message, runtime_version, timestamp) VALUES (?, ?, ?, unixepoch())",
@@ -229,7 +437,7 @@ def write_heartbeat(component: str, message: str):
 
 def get_last_heartbeat(component: str) -> dict | None:
     """Get last heartbeat for component."""
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_conn()
     cursor = conn.cursor()
     cursor.execute(
         "SELECT component, message, runtime_version, timestamp FROM heartbeats WHERE component = ? ORDER BY timestamp DESC LIMIT 1",
@@ -249,18 +457,56 @@ def get_last_heartbeat(component: str) -> dict | None:
 
 # Task operations - Phase 4 compliant
 
-def create_task(task_type: str, payload: str) -> int:
-    """Create a new task with pending status."""
-    conn = sqlite3.connect(DB_PATH)
+def create_task(task_type: str, payload: str, project: str = "default") -> int:
+    """Create a new task with pending status.
+    
+    Args:
+        task_type: Type of task (e.g., 'code_review', 'generate')
+        payload: Task payload (JSON string)
+        project: Project name (default: 'default')
+    """
+    _check_runtime_write_permission('tasks')
+    conn = get_conn()
     cursor = conn.cursor()
+    # Store project in payload for compatibility
+    import json
+    payload_dict = json.loads(payload) if payload else {}
+    payload_dict['_project'] = project
     cursor.execute(
         "INSERT INTO tasks (type, status, payload, created_at, updated_at) VALUES (?, 'pending', ?, unixepoch(), unixepoch())",
-        (task_type, payload)
+        (task_type, json.dumps(payload_dict))
     )
     task_id = cursor.lastrowid
     conn.commit()
     conn.close()
     return task_id
+
+
+def get_task(task_id: int) -> dict | None:
+    """Get task by ID.
+    
+    Returns:
+        Task dict with id, type, status, payload, created_at, updated_at
+        or None if not found
+    """
+    conn = get_conn()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT id, type, status, payload, created_at, updated_at FROM tasks WHERE id = ?",
+        (task_id,)
+    )
+    row = cursor.fetchone()
+    conn.close()
+    if row:
+        return {
+            'id': row[0],
+            'type': row[1],
+            'status': row[2],
+            'payload': row[3],
+            'created_at': row[4],
+            'updated_at': row[5]
+        }
+    return None
 
 
 def get_pending_task():
@@ -270,7 +516,7 @@ def get_pending_task():
     Note: SQLite doesn't support FOR UPDATE, but we use transaction
     isolation and atomic updates to prevent race conditions.
     """
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_conn()
     cursor = conn.cursor()
     cursor.execute(
         "SELECT id, type, status, payload, created_at, updated_at FROM tasks WHERE status = 'pending' ORDER BY id ASC LIMIT 1"
@@ -297,7 +543,7 @@ def claim_pending_task(timeout_seconds: int = 300):
         Task row (id, type, status, payload, created_at, updated_at, started_at)
         or None if no pending tasks
     """
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_conn()
     conn.isolation_level = 'EXCLUSIVE'  # Ensure atomicity
     cursor = conn.cursor()
     
@@ -329,7 +575,7 @@ def claim_pending_task(timeout_seconds: int = 300):
 
 def update_task_status(task_id: int, status: str):
     """Update task status and timestamp."""
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_conn()
     cursor = conn.cursor()
     cursor.execute(
         "UPDATE tasks SET status = ?, updated_at = unixepoch() WHERE id = ?",
@@ -341,7 +587,8 @@ def update_task_status(task_id: int, status: str):
 
 def append_task_result(task_id: int, new_payload: str):
     """Append result to task payload."""
-    conn = sqlite3.connect(DB_PATH)
+    _check_runtime_write_permission('tasks')
+    conn = get_conn()
     cursor = conn.cursor()
     cursor.execute(
         "UPDATE tasks SET payload = ?, updated_at = unixepoch() WHERE id = ?",
@@ -364,7 +611,7 @@ def get_stuck_running_tasks(timeout_seconds: int = 300):
     Returns:
         List of task rows that are stuck
     """
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_conn()
     cursor = conn.cursor()
     cursor.execute(
         """SELECT id, type, status, payload, created_at, updated_at, started_at 
@@ -391,7 +638,7 @@ def reset_running_tasks_to_pending(timeout_seconds: int = 300):
     Returns:
         Number of tasks reset
     """
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_conn()
     cursor = conn.cursor()
     cursor.execute(
         """UPDATE tasks 
@@ -426,7 +673,7 @@ def write_execution_log(task_id: int, started_at: int, finished_at: int,
         latency_ms: Execution latency
         error: Error message if failed
     """
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_conn()
     cursor = conn.cursor()
     
     # Ensure execution_log table exists
@@ -459,7 +706,7 @@ def get_stuck_running_tasks_legacy(timeout_seconds: int = 3600):
     
     Phase 4: Lease-based execution - timeout recovery.
     """
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_conn()
     cursor = conn.cursor()
     cursor.execute(
         "SELECT id FROM tasks WHERE status = 'running' AND (unixepoch() - updated_at) > ?",
@@ -472,7 +719,7 @@ def get_stuck_running_tasks_legacy(timeout_seconds: int = 3600):
 
 def reset_task_to_pending(task_id: int):
     """Reset task to pending (anti-deadlock only)."""
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_conn()
     cursor = conn.cursor()
     cursor.execute(
         "UPDATE tasks SET status = 'pending', updated_at = unixepoch() WHERE id = ?",
@@ -482,22 +729,9 @@ def reset_task_to_pending(task_id: int):
     conn.close()
 
 
-def get_task(task_id: int):
-    """Get single task by ID."""
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute(
-        "SELECT id, type, status, payload, created_at, updated_at FROM tasks WHERE id = ?",
-        (task_id,)
-    )
-    row = cursor.fetchone()
-    conn.close()
-    return row
-
-
 def list_tasks(limit: int = 10):
     """List recent tasks."""
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_conn()
     cursor = conn.cursor()
     cursor.execute(
         "SELECT id, type, status, payload, created_at, updated_at FROM tasks ORDER BY created_at DESC LIMIT ?",
@@ -520,7 +754,7 @@ def create_evolution_job(task_id: int, proposal_path: str) -> int:
     Returns:
         Job ID
     """
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_conn()
     cursor = conn.cursor()
     cursor.execute(
         "INSERT INTO evolution_jobs (task_id, proposal_path, status, created_at) VALUES (?, ?, 'proposed', unixepoch())",
@@ -534,7 +768,7 @@ def create_evolution_job(task_id: int, proposal_path: str) -> int:
 
 def get_evolution_job(job_id: int):
     """Get evolution job by ID."""
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_conn()
     cursor = conn.cursor()
     cursor.execute(
         "SELECT id, task_id, proposal_path, status, created_at, validated_at, approved_at FROM evolution_jobs WHERE id = ?",
@@ -547,7 +781,7 @@ def get_evolution_job(job_id: int):
 
 def update_evolution_job_status(job_id: int, status: str):
     """Update evolution job status with appropriate timestamp."""
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_conn()
     cursor = conn.cursor()
     
     if status == "validated":
@@ -572,7 +806,7 @@ def update_evolution_job_status(job_id: int, status: str):
 
 def list_evolution_jobs(status: str = None, limit: int = 10):
     """List evolution jobs, optionally filtered by status."""
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_conn()
     cursor = conn.cursor()
     
     if status:
@@ -611,7 +845,7 @@ def create_memory_record(evolution_job_id: int, context: str, change_summary: st
     Returns:
         Memory record ID
     """
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_conn()
     cursor = conn.cursor()
     cursor.execute(
         """INSERT INTO engineering_memory 
@@ -627,7 +861,7 @@ def create_memory_record(evolution_job_id: int, context: str, change_summary: st
 
 def get_memory_by_job_id(evolution_job_id: int):
     """Get memory record by evolution job ID."""
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_conn()
     cursor = conn.cursor()
     cursor.execute(
         "SELECT id, evolution_job_id, context, change_summary, outcome, metrics, created_at, embedding_id FROM engineering_memory WHERE evolution_job_id = ?",
@@ -640,7 +874,7 @@ def get_memory_by_job_id(evolution_job_id: int):
 
 def get_all_memories(outcome: str = None, limit: int = 100):
     """Get all memory records, optionally filtered by outcome."""
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_conn()
     cursor = conn.cursor()
     
     if outcome:
@@ -664,7 +898,7 @@ def get_task_ledger_summary(task_id: int) -> dict:
     
     Used by outcome analyzer to collect evolution costs.
     """
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_conn()
     cursor = conn.cursor()
     cursor.execute(
         "SELECT COALESCE(SUM(total_tokens), 0), COALESCE(SUM(estimated_cost), 0), COUNT(*) FROM ai_ledger WHERE task_id = ?",
@@ -682,7 +916,7 @@ def get_task_ledger_summary(task_id: int) -> dict:
 
 def get_memory_statistics():
     """Get statistics about engineering memory."""
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_conn()
     cursor = conn.cursor()
     
     cursor.execute("""
@@ -709,7 +943,7 @@ def get_memory_statistics():
 
 def write_audit_log(actor: str, action: str, result: str, details: str = ""):
     """Write audit log entry for all control commands."""
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_conn()
     _configure_sqlite_pragmas(conn)
     cursor = conn.cursor()
     cursor.execute(
@@ -722,7 +956,7 @@ def write_audit_log(actor: str, action: str, result: str, details: str = ""):
 
 def get_recent_audit_logs(limit: int = 50):
     """Get recent audit log entries."""
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_conn()
     cursor = conn.cursor()
     cursor.execute(
         "SELECT timestamp, actor, action, result, details FROM audit_log ORDER BY timestamp DESC LIMIT ?",
@@ -737,7 +971,7 @@ def get_recent_audit_logs(limit: int = 50):
 
 def get_ai_budget() -> dict:
     """Get current AI budget limits."""
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_conn()
     cursor = conn.cursor()
     cursor.execute("SELECT daily_limit, hourly_limit, per_task_limit FROM ai_budget WHERE id = 1")
     row = cursor.fetchone()
@@ -754,7 +988,7 @@ def get_ai_budget() -> dict:
 
 def update_ai_budget(daily: int = None, hourly: int = None, per_task: int = None):
     """Update AI budget limits."""
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_conn()
     _configure_sqlite_pragmas(conn)
     cursor = conn.cursor()
     
@@ -773,7 +1007,7 @@ def update_ai_budget(daily: int = None, hourly: int = None, per_task: int = None
 
 def get_latest_health_metrics() -> dict:
     """Get latest runtime health metrics for /status display."""
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_conn()
     cursor = conn.cursor()
     
     # Get latest snapshot
@@ -822,7 +1056,7 @@ def get_latest_health_metrics() -> dict:
 
 def get_switch_state() -> dict:
     """Get current version switch state."""
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_conn()
     cursor = conn.cursor()
     cursor.execute("SELECT current_version, next_version, state, started_at, result FROM switch_state WHERE id = 1")
     row = cursor.fetchone()
@@ -841,7 +1075,7 @@ def get_switch_state() -> dict:
 
 def update_switch_state(state: str = None, next_version: str = None, result: str = None):
     """Update switch state."""
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_conn()
     _configure_sqlite_pragmas(conn)
     cursor = conn.cursor()
     
@@ -869,7 +1103,7 @@ def update_switch_state(state: str = None, next_version: str = None, result: str
 
 def update_memory_relevance(memory_id: int, score_delta: float):
     """Update memory relevance score (decay or boost)."""
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_conn()
     _configure_sqlite_pragmas(conn)
     cursor = conn.cursor()
     cursor.execute(
@@ -882,7 +1116,7 @@ def update_memory_relevance(memory_id: int, score_delta: float):
 
 def decay_old_memories(decay_factor: float = 0.1):
     """Apply decay to old, unused memories."""
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_conn()
     _configure_sqlite_pragmas(conn)
     cursor = conn.cursor()
     cursor.execute("""

@@ -6,7 +6,7 @@ No system_state access. No ledger bypass.
 import time
 from typing import Callable
 
-from aegisos.ai.ledger import (
+from aegisos.db.ledger import (
     init_ai_ledger,
     check_daily_budget,
     log_ai_usage,

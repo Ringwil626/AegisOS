@@ -29,6 +29,17 @@ import sys
 import os
 import time
 
+# Runtime Architecture Protection
+# Prevent AI modules from being loaded in Core Runtime
+FORBIDDEN_MODULES = ["intelligence", "analysis", "memory"]
+for module_name in sys.modules:
+    for forbidden in FORBIDDEN_MODULES:
+        if forbidden in module_name and "aegisos" in module_name:
+            raise RuntimeError(
+                f"ARCHITECTURE_VIOLATION: Forbidden module '{forbidden}' loaded in runtime: {module_name}\n"
+                f"Core Runtime cannot import AI/Intelligence/Memory modules."
+            )
+
 _current_dir = os.path.dirname(__file__)
 _project_root = os.path.dirname(os.path.dirname(_current_dir))
 sys.path.insert(0, _project_root)

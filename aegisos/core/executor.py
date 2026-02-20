@@ -42,14 +42,14 @@ from aegisos.db.sqlite_store import (
 
 # Phase5 Usage Accounting
 from aegisos.db.usage_ledger import UsageLedger, record_task_usage
-from aegisos.ai.pricing import calculate_cost
+from aegisos.db.pricing import calculate_cost
 
 # Prompt Contract
 from aegisos.core.state_builder import PromptContractBuilder, ActionType
 from aegisos.core.validator import strict_validate, ProtocolViolation
 
 # Inference Contract
-from aegisos.infra.kimi_client import InferenceRequest, run_inference
+from aegisos.executor._inference_provider import InferenceRequest, run_inference
 
 
 # Executor Contract Version

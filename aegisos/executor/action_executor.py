@@ -223,12 +223,9 @@ def mark_task_approved(task_id: int, actor: str) -> bool:
         approval_marker = f"\n\n[APPROVED by {actor} at {__import__('time').time()}]"
         new_payload = current_payload + approval_marker
         
-        cursor.execute(
-            "UPDATE tasks SET payload = ? WHERE id = ?",
-            (new_payload, task_id)
-        )
-        conn.commit()
-        conn.close()
+        # Use runtime_writer for Level 0 table writes
+        from aegisos.db.runtime_writer import update_task_payload
+        update_task_payload(task_id, new_payload)
         return True
         
     except Exception as e:

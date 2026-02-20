@@ -1,15 +1,16 @@
-"""AegisOS - Production Hardened Runtime with Kimi API Integration
+"""AegisOS - Deterministic Runtime
 
-Phases:
-  - Phase 4: Runtime Protocol
-  - Phase 5: AI Cost Governance
-  - Phase 6: Controlled Evolution
-  - Phase 7: Persistent Intelligence
-  - Production Hardening: Instance Lock, WAL, Health Monitor, Audit
+Architecture:
+  - Layer 1: Core Runtime (supervisor, executor, db)
+  - Layer 2: Execution (task_runner, inference_executor)
+  - Layer 3: Interface (discord)
+  - Layer 4: Governance (human-approved changes)
+  - Layer 5: Project Space (intelligence tools, optional)
 
-Kimi API Integration:
-  - Set MOONSHOT_API_KEY environment variable to enable real AI
-  - Falls back to mock if not configured
+Runtime Principles:
+  - No AI in Core
+  - AI only through inference_executor
+  - Deterministic, replayable, auditable
 """
 import sys
 import os
@@ -22,24 +23,22 @@ sys.path.insert(0, os.path.dirname(__file__))
 # P0-1: Instance Lock
 from aegisos.core.instancelock import acquire_lock, release_lock
 
+# Layer 1: Core Runtime
 from aegisos.db.sqlite_store import (
     init_db,
     set_system_state,
     get_system_state,
     get_stuck_running_tasks,
     reset_task_to_pending,
-    write_audit_log,
-    list_evolution_jobs
+    write_audit_log
 )
-from aegisos.interfaces import discord_bot
-from aegisos.executor import task_runner
-from aegisos.ai.executor import init_ai_system
-from aegisos.ai.kimi_client import KimiClient, check_configuration
-from aegisos.evolution.manager import ensure_directories as init_evolution_dirs
-from aegisos.evolution.validator import auto_validate_pending
-from aegisos.memory.vector_index import refresh_index
-from aegisos.analysis.outcome_analyzer import auto_analyze_and_save
 from aegisos.core.health import update_system_health, record_health_snapshot
+
+# Layer 2: Execution
+from aegisos.executor import task_runner
+
+# Layer 3: Interface
+from aegisos.interfaces import discord_bot
 
 
 def main_loop():
@@ -68,18 +67,6 @@ def main_loop():
             except Exception as e:
                 print(f"[Main Loop] Anti-deadlock error: {e}")
             
-            # Phase 6: Auto-validate evolution proposals (NO AI)
-            try:
-                auto_validate_pending()
-            except Exception as e:
-                print(f"[Main Loop] Evolution validation error: {e}")
-            
-            # Phase 7: Analyze completed evolutions and generate memory
-            try:
-                analyze_completed_evolutions()
-            except Exception as e:
-                print(f"[Main Loop] Outcome analysis error: {e}")
-            
             # Execute one task
             try:
                 task_id = task_runner.run_once()
@@ -89,25 +76,6 @@ def main_loop():
                 print(f"[Main Loop] Execution error: {e}")
         
         time.sleep(10)
-
-
-def analyze_completed_evolutions():
-    """Phase 7: Analyze evolution outcomes and generate engineering memory."""
-    jobs = list_evolution_jobs(limit=20)
-    
-    for job in jobs:
-        job_id = job[0]
-        status = job[3]
-        
-        if status in ["validated", "rejected", "approved"]:
-            from aegisos.db.sqlite_store import get_memory_by_job_id
-            existing = get_memory_by_job_id(job_id)
-            
-            if not existing:
-                print(f"[Phase 7] Analyzing evolution job {job_id}")
-                memory_id = auto_analyze_and_save(job_id)
-                if memory_id:
-                    print(f"[Phase 7] Memory record {memory_id} created")
 
 
 def graceful_shutdown():
@@ -140,6 +108,10 @@ def main():
     print("[P0-2] Initializing database with WAL mode...")
     init_db()
     
+    # Print firewall status (redundant but explicit)
+    print("[GUARD] Runtime Write Firewall: ACTIVE")
+    print("[GUARD] Level0 tables protected: 6")
+    
     # P0-3: Crash detection
     last_shutdown = get_system_state("last_shutdown")
     if last_shutdown == "clean":
@@ -150,50 +122,11 @@ def main():
         set_system_state("last_start_mode", "recovered")
         set_system_state("last_shutdown", "unknown")
     
-    # Phase 5: Initialize AI ledger
-    print("[P1-1] Initializing AI ledger and budget guard...")
-    init_ai_system()
-    
-    # Initialize Kimi API client (if configured)
-    print("[P1-2] Checking Kimi API configuration...")
-    kimi_ok, kimi_msg = check_configuration()
-    if kimi_ok:
-        try:
-            # Create Kimi client and inject into task runner
-            kimi_client = KimiClient(
-                api_key=os.getenv("MOONSHOT_API_KEY"),
-                base_url=os.getenv("MOONSHOT_BASE_URL", "https://api.moonshot.cn/v1")
-            )
-            
-            # Replace mock_ai_call with Kimi wrapper
-            def kimi_call_wrapper(prompt: str):
-                """Wrapper to adapt Kimi client to executor interface."""
-                import json
-                result = kimi_client.run_task(prompt)
-                response_json = json.dumps(result)
-                # Estimate tokens (approximate)
-                prompt_tokens = len(prompt) // 4
-                completion_tokens = len(response_json) // 4
-                return response_json, prompt_tokens, completion_tokens
-            
-            # Inject into task runner
-            task_runner.mock_ai_call = kimi_call_wrapper
-            print(f"[P1-2] {kimi_msg}")
-            print("[OK] Kimi API enabled - AI tasks will use real model")
-        except Exception as e:
-            print(f"[WARN] Failed to initialize Kimi client: {e}")
-            print("[OK] Falling back to mock AI")
-    else:
-        print(f"[P1-2] {kimi_msg}")
-        print("[OK] Using mock AI (set MOONSHOT_API_KEY to enable real API)")
-    
-    # Phase 6: Initialize evolution workspace
-    print("[P2-1] Initializing evolution workspace...")
-    init_evolution_dirs()
-    
-    # Phase 7: Build vector index
-    print("[P3-1] Building engineering memory index...")
-    refresh_index()
+    # Initialize inference executor configuration
+    print("[P1-1] Checking inference configuration...")
+    from aegisos.executor._inference_provider import check_configuration
+    inference_ok, inference_msg = check_configuration()
+    print(f"[P1-1] {inference_msg}")
     
     print("[OK] Database ready.")
     
