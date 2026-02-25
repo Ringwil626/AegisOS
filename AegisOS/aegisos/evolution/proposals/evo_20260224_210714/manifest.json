@@ -1,0 +1,15 @@
+{
+  "proposal_id": "evo_20260224_210714",
+  "goal": "Test evolution proposal",
+  "target_version": "v1.1",
+  "files_changed": [
+    "executor/task_runner.py"
+  ],
+  "risk_level": "unknown",
+  "requires_migration": false,
+  "created_at": 1771938434.2896788,
+  "author": "AI",
+  "justification_against_history": "No similar historical failures found. This follows established patterns with added safeguards. Proceeding with standard validation.",
+  "historical_failures_count": 0,
+  "historical_successes_count": 0
+}

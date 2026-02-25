@@ -1,0 +1,14 @@
+# AegisOS Dependencies
+# Install with: pip install -r requirements.txt
+
+# Discord Bot
+discord.py>=2.3.0
+
+# Configuration
+pyyaml>=6.0
+
+# AI API
+openai>=1.0.0
+
+# HTTP requests (for future extensions)
+requests>=2.31.0

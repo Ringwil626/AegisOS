@@ -1,0 +1,86 @@
+# AegisOS Phase6 - Optimization Policy Configuration
+# 
+# This file defines when and how the system should optimize itself.
+# All thresholds are conservative by design - better to under-optimize
+# than to introduce instability.
+
+# Analysis window configuration
+analysis:
+  # How often to run analysis (minutes)
+  interval_minutes: 60
+  
+  # Time window for metrics (hours)
+  metrics_window_hours: 24
+  
+  # Minimum number of tasks required for analysis
+  min_task_count: 10
+
+# Optimization triggers
+# Only optimize when these conditions are met
+optimize_when:
+  # Success rate drop threshold (%)
+  success_rate_drop: 15
+  
+  # Average token increase threshold (%)
+  avg_tokens_increase: 25
+  
+  # Retry ratio threshold (%)
+  retry_ratio: 20
+  
+  # P95 latency increase threshold (%)
+  p95_latency_increase: 30
+  
+  # Cost per task increase threshold (%)
+  cost_per_task_increase: 20
+
+# Proposal generation
+proposals:
+  # Maximum number of pending proposals
+  max_pending: 5
+  
+  # Minimum time between proposals (hours)
+  min_interval_hours: 4
+  
+  # Risk levels that can be auto-approved (none by default)
+  auto_approve_risk_levels: []  # Options: low, medium, high
+
+# Shadow execution configuration
+shadow:
+  # Number of tasks to run in shadow mode before evaluation
+  evaluation_task_count: 20
+  
+  # Maximum shadow execution time (hours)
+  max_duration_hours: 24
+  
+  # Success rate regression threshold (%)
+  # If shadow success rate is lower than this, reject
+  max_success_rate_regression: 5
+
+# Strategy switching
+switch:
+  # Require explicit approval for all switches
+  require_approval: true
+  
+  # Rollback window (minutes) - can revert if issues detected
+  rollback_window_minutes: 30
+  
+  # Metrics to monitor after switch
+  post_switch_monitoring_minutes: 60
+
+# Optimization types enabled
+optimizations:
+  prompt_tuning:
+    enabled: true
+    description: "Optimize prompt templates for efficiency"
+    
+  task_split:
+    enabled: true
+    description: "Split large tasks into smaller chunks"
+    
+  model_switch:
+    enabled: true
+    description: "Switch to cheaper/faster models when appropriate"
+    
+  context_compression:
+    enabled: false  # Disabled by default - high risk
+    description: "Compress context to reduce token usage"

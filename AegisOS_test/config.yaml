@@ -1,0 +1,100 @@
+# ============================================
+# Kimi Agent Queue System - 配置文件
+# ============================================
+
+# Discord Bot 配置
+discord:
+  token: ""  # 从环境变量 DISCORD_TOKEN 读取，不要在此处填写
+  command_prefix: "!"
+  admin_users:
+    - "YOUR_DISCORD_USER_ID_1"  # Replace with your Discord user ID
+    - "YOUR_DISCORD_USER_ID_2"  # Optional: add more admin users
+  
+  # 命令频道配置（机器人只在这些频道响应命令）
+  command_channel:
+    - "YOUR_COMMAND_CHANNEL_ID"  # Replace with your Discord channel ID
+  
+  # 状态推送频道配置（按功能分离，便于手机端浏览）
+  channels:
+    # #ai-tasks: 用户交互频道（与 command_channel 相同）
+    # 用途: 接收用户指令 (/wake, /stop, /task 等)
+    
+    system_status: "YOUR_STATUS_CHANNEL_ID"  # Replace with your Discord channel ID
+    # 用途: Supervisor心跳、Runtime版本、数据库状态
+    # 频率: 状态变化时推送，避免刷屏
+    
+    task_status: "YOUR_TASK_CHANNEL_ID"      # Replace with your Discord channel ID
+    # 用途: 任务生命周期追踪 (pending→running→completed)
+    # 频率: 任务状态变化时推送
+    
+    alerts: ""                            # #alerts: 告警频道（留空则不启用）
+    # 用途: Critical errors、系统异常、治理违规
+    # 频率: 仅异常时推送，高优先级
+    
+    dev_logs: ""                          # #dev-logs: 开发调试（可选）
+    # 用途: PR合规检查、AI自检结果、调试信息
+
+# 路径配置
+paths:
+  default_project: "C:\\Projects\\default"  # 默认项目路径
+  data_dir: "./data"                         # 数据目录
+  log_dir: "./logs"                          # 日志目录
+
+# AI API 配置 (Moonshot - kimi-k2.5)
+ai:
+  provider: "moonshot"
+  
+  moonshot:
+    api_key: ""  # 从环境变量 MOONSHOT_API_KEY 读取
+    base_url: "https://api.moonshot.cn/v1"
+    model: "kimi-k2.5"        # 使用 kimi-k2.5 模型 (temperature 必须为 1.0)
+    temperature: 1.0           # kimi-k2.5 只支持 temperature=1
+    max_tokens: 4000
+    timeout: 300
+
+# 旧配置保留兼容 (已弃用，请使用 ai.moonshot 配置)
+kimi:
+  api_key: ""  # 从环境变量读取
+  api_base_url: "https://api.moonshot.cn/v1"
+  max_execution_time: 300
+  default_task_type: "dev"
+  model: "kimi-k2.5"
+
+# 额度配置 (Allegretto)
+quota:
+  total_weekly_tokens: 2048000   # 周Token配额（约200万）
+  warning_threshold: 0.8          # 警告阈值（80%）
+  critical_threshold: 0.95        # 危急阈值（95%）
+  check_interval: 18000           # 额度检查间隔（秒，默认5小时）
+  rates:
+    input: 4    # 输入token费率（元/百万）
+    output: 16   # 输出token费率（元/百万）
+
+# Supervisor 监控配置
+supervisor:
+  check_interval: 5           # 进程检查间隔（秒）
+  heartbeat_timeout: 60       # 心跳超时（秒）
+  task_stall_timeout: 1200    # 任务卡死超时（秒，20分钟）
+  queue_backpressure: 10      # 队列堆积警戒值
+  execution_timeout: 300      # 执行超时（秒，5分钟）
+
+# Worker 配置
+worker:
+  serial_interval: 2          # 串行间隔（秒）
+  poll_interval: 5            # 轮询间隔（秒）
+  max_retries: 3              # 最大重试次数
+
+# Prompt组装配置
+assembler:
+  max_agent_md_tokens: 5000       # agent.md最大token数
+  max_memories_count: 10           # 最大记忆条数
+  max_file_index_count: 5          # 最大文件索引数
+  max_file_content_tokens: 2000    # 单个文件内容最大token数
+  max_parent_result_tokens: 3000   # 父任务结果最大token数
+
+# 日志配置
+logging:
+  level: "INFO"               # 日志级别 (DEBUG/INFO/WARNING/ERROR)
+  max_file_size: 10485760     # 单个日志文件最大大小（字节，10MB）
+  backup_count: 5             # 保留的日志文件数量
+  format: "%(asctime)s [%(name)s] %(levelname)s: %(message)s"

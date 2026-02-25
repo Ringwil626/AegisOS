@@ -1,0 +1,40 @@
+name: AegisOS Governance Full Check
+
+on:
+  schedule:
+    # Run every Sunday at 00:00 UTC
+    - cron: '0 0 * * 0'
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  governance-full:
+    name: Full Governance Audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run Full Governance Check
+        run: |
+          python check_governance.py --with-db
+
+      - name: Upload Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: governance-full-report
+          path: governance_report.md
+          retention-days: 30
+
+      - name: Check Results
+        if: always()
+        run: |
+          if [ -f governance_report.md ]; then
+            echo "## Full Governance Report" >> $GITHUB_STEP_SUMMARY
+            cat governance_report.md >> $GITHUB_STEP_SUMMARY
+          fi

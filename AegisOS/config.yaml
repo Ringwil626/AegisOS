@@ -1,0 +1,79 @@
+# ============================================
+# AegisOS - 开箱即用配置文件
+# ============================================
+
+# Discord Bot 配置 (可选)
+discord:
+  token: ""  # 从环境变量 DISCORD_TOKEN 读取，不要在此处填写
+  command_prefix: "!"
+  admin_users: []
+  command_channel: []
+  channels:
+    system_status: ""
+    task_status: ""
+    alerts: ""
+    dev_logs: ""
+
+# 路径配置 (自动创建)
+paths:
+  default_project: "./projects/default"
+  data_dir: "./data"
+  log_dir: "./logs"
+
+# AI API 配置 (Moonshot - kimi-k2.5)
+ai:
+  provider: "moonshot"
+  moonshot:
+    api_key: ""  # 从环境变量 MOONSHOT_API_KEY 读取
+    base_url: "https://api.moonshot.cn/v1"
+    model: "kimi-k2.5"
+    temperature: 1.0
+    max_tokens: 4000
+    timeout: 300
+
+# 旧配置保留兼容
+kimi:
+  api_key: ""
+  api_base_url: "https://api.moonshot.cn/v1"
+  max_execution_time: 300
+  default_task_type: "dev"
+  model: "kimi-k2.5"
+
+# 额度配置
+quota:
+  total_weekly_tokens: 2048000
+  warning_threshold: 0.8
+  critical_threshold: 0.95
+  check_interval: 18000
+  rates:
+    input: 4
+    output: 16
+
+# Supervisor 监控配置
+supervisor:
+  check_interval: 5
+  heartbeat_timeout: 60
+  task_stall_timeout: 1200
+  queue_backpressure: 10
+  execution_timeout: 300
+
+# Worker 配置
+worker:
+  serial_interval: 2
+  poll_interval: 5
+  max_retries: 3
+
+# Prompt组装配置
+assembler:
+  max_agent_md_tokens: 5000
+  max_memories_count: 10
+  max_file_index_count: 5
+  max_file_content_tokens: 2000
+  max_parent_result_tokens: 3000
+
+# 日志配置
+logging:
+  level: "INFO"
+  max_file_size: 10485760
+  backup_count: 5
+  format: "%(asctime)s [%(name)s] %(levelname)s: %(message)s"

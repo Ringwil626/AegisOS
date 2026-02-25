@@ -1,0 +1,33 @@
+# AegisOS AI Pricing Configuration
+# Local pricing table for deterministic cost calculation
+# Do NOT fetch prices online - system must be reproducible
+
+# Moonshot (Kimi) Models
+moonshot:
+  kimi-k2.5:
+    input_per_1k: 0.012    # $0.012 per 1K input tokens
+    output_per_1k: 0.012   # $0.012 per 1K output tokens
+    currency: USD
+  
+  kimi-k1.5:
+    input_per_1k: 0.008
+    output_per_1k: 0.008
+    currency: USD
+
+# OpenAI Models (for future use)
+openai:
+  gpt-4:
+    input_per_1k: 0.03
+    output_per_1k: 0.06
+    currency: USD
+  
+  gpt-3.5-turbo:
+    input_per_1k: 0.0015
+    output_per_1k: 0.002
+    currency: USD
+
+# Default pricing (fallback)
+default:
+  input_per_1k: 0.012
+  output_per_1k: 0.012
+  currency: USD
